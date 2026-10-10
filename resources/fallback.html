@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"
+    />
+    <title>智慧工地 · 无法连接</title>
+    <style>
+      :root {
+        --bg: #0e2a47;
+        --card: #16324f;
+        --card-border: #24486b;
+        --text: #e8f1fa;
+        --muted: #93b0cc;
+        --accent: #3aa0e8;
+        --ok: #3ecf8e;
+        --fail: #ff6b6b;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 32px;
+        background: radial-gradient(1200px 600px at 50% -10%, #17466f 0%, var(--bg) 60%);
+        color: var(--text);
+        font: 14px/1.6 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+
+      .card {
+        width: min(760px, 100%);
+        padding: 28px 32px 24px;
+        border: 1px solid var(--card-border);
+        border-radius: 14px;
+        background: var(--card);
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+      }
+
+      .head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 4px;
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--fail);
+        box-shadow: 0 0 0 4px rgba(255, 107, 107, 0.18);
+        flex: none;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 19px;
+        font-weight: 600;
+      }
+
+      .sub {
+        margin: 6px 0 18px;
+        color: var(--muted);
+      }
+
+      .error {
+        margin-bottom: 18px;
+        padding: 10px 14px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 107, 107, 0.35);
+        background: rgba(255, 107, 107, 0.08);
+        color: #ffd5d5;
+        font-size: 13px;
+        word-break: break-all;
+      }
+
+      .error:empty {
+        display: none;
+      }
+
+      h2 {
+        margin: 0 0 8px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--muted);
+        letter-spacing: 0.04em;
+      }
+
+      ul.candidates {
+        margin: 0 0 20px;
+        padding: 0;
+        list-style: none;
+        border: 1px solid var(--card-border);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      ul.candidates li {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--card-border);
+      }
+
+      ul.candidates li:last-child {
+        border-bottom: 0;
+      }
+
+      .tag {
+        flex: none;
+        min-width: 60px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .url {
+        flex: 1;
+        font-family: "Cascadia Mono", Consolas, monospace;
+        font-size: 12.5px;
+        word-break: break-all;
+      }
+
+      .state {
+        flex: none;
+        font-size: 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .state::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--fail);
+      }
+
+      .state.ok::before {
+        background: var(--ok);
+      }
+
+      .state.ok {
+        color: var(--ok);
+      }
+
+      .state.bad {
+        color: var(--fail);
+      }
+
+      .row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+
+      input[type="text"] {
+        flex: 1;
+        min-width: 0;
+        padding: 9px 12px;
+        border: 1px solid var(--card-border);
+        border-radius: 8px;
+        background: #0f2338;
+        color: var(--text);
+        font-family: "Cascadia Mono", Consolas, monospace;
+        font-size: 12.5px;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+
+      input[type="text"]:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+
+      button {
+        flex: none;
+        padding: 9px 16px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+        transition: filter 0.15s ease;
+      }
+
+      button:hover {
+        filter: brightness(1.12);
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+        filter: none;
+      }
+
+      button.primary {
+        background: var(--accent);
+        color: #04182b;
+        font-weight: 600;
+      }
+
+      button.ghost {
+        background: transparent;
+        border-color: var(--card-border);
+        color: var(--text);
+      }
+
+      footer {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 18px;
+        margin-top: 22px;
+        padding-top: 14px;
+        border-top: 1px solid var(--card-border);
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      footer code {
+        color: #cfe4f7;
+        font-family: "Cascadia Mono", Consolas, monospace;
+      }
+    </style>
+  </head>
+
+  <body>
+    <main class="card">
+      <div class="head">
+        <span class="dot"></span>
+        <h1>无法连接到服务器</h1>
+      </div>
+      <p class="sub">壳已尝试内网与公网两个地址。请检查网络，或换一个地址后重试。</p>
+
+      <div class="error" id="error"></div>
+
+      <h2>候选地址</h2>
+      <ul class="candidates" id="candidates"></ul>
+
+      <div class="row" style="margin-bottom: 18px">
+        <button class="primary" id="retry">重新探测并加载</button>
+        <button class="ghost" id="auto">自动选择服务器</button>
+      </div>
+
+      <h2>手动指定地址</h2>
+      <div class="row">
+        <input type="text" id="manual" placeholder="例如 172.23.109.240:8081 或 https://10.0.0.5:8081/" />
+        <button class="ghost" id="apply">使用该地址</button>
+      </div>
+
+      <footer>
+        <span>壳版本 <code id="appVersion">-</code></span>
+        <span>web 版本 <code id="webCommit">-</code></span>
+        <span>构建时间 <code id="buildTime">-</code></span>
+      </footer>
+    </main>
+
+    <script>
+      (function () {
+        var bridge = window.shellFallback;
+        var candidatesNode = document.getElementById("candidates");
+        var errorNode = document.getElementById("error");
+        var manualNode = document.getElementById("manual");
+        var retryButton = document.getElementById("retry");
+        var autoButton = document.getElementById("auto");
+        var applyButton = document.getElementById("apply");
+
+        function setText(id, value) {
+          var node = document.getElementById(id);
+          if (node) node.textContent = value || "-";
+        }
+
+        function renderCandidates(list, active) {
+          candidatesNode.textContent = "";
+          if (!list || !list.length) {
+            var empty = document.createElement("li");
+            empty.className = "url";
+            empty.textContent = "（暂无探测结果）";
+            candidatesNode.appendChild(empty);
+            return;
+          }
+          list.forEach(function (item) {
+            var row = document.createElement("li");
+
+            var tag = document.createElement("span");
+            tag.className = "tag";
+            tag.textContent = item.label || "候选";
+
+            var url = document.createElement("span");
+            url.className = "url";
+            url.textContent = item.url;
+
+            var state = document.createElement("span");
+            state.className = "state " + (item.reachable ? "ok" : "bad");
+            state.textContent = item.reachable
+              ? item.url === active
+                ? "可达 · 使用中"
+                : "可达"
+              : "不可达";
+
+            row.appendChild(tag);
+            row.appendChild(url);
+            row.appendChild(state);
+
+            if (!item.reachable && item.url) {
+              var use = document.createElement("button");
+              use.className = "ghost";
+              use.textContent = "强制使用";
+              use.addEventListener("click", function () {
+                apply(item.url);
+              });
+              row.appendChild(use);
+            }
+
+            candidatesNode.appendChild(row);
+          });
+        }
+
+        function render(status) {
+          if (!status) return;
+          errorNode.textContent = status.lastError || "";
+          renderCandidates(status.candidates, status.active);
+          manualNode.value = status.manual || "";
+          setText("appVersion", status.appVersion);
+          setText("webCommit", status.webCommit);
+          setText("buildTime", status.buildTime);
+        }
+
+        function setBusy(busy) {
+          retryButton.disabled = busy;
+          autoButton.disabled = busy;
+          applyButton.disabled = busy;
+        }
+
+        function refresh() {
+          if (!bridge) {
+            errorNode.textContent = "主进程桥未就绪（preload 未加载）。";
+            return;
+          }
+          setBusy(true);
+          bridge
+            .getStatus()
+            .then(function (status) {
+              render(status);
+            })
+            .catch(function (error) {
+              errorNode.textContent = String(error);
+            })
+            .then(function () {
+              setBusy(false);
+            });
+        }
+
+        function apply(url) {
+          if (!bridge) return;
+          manualNode.value = url;
+          setBusy(true);
+          bridge
+            .setManual(url)
+            .then(function (accepted) {
+              if (!accepted) {
+                errorNode.textContent = "地址无法识别：" + url;
+                setBusy(false);
+              }
+              // accepted 时窗口会导航到该地址，本页即将被替换，无需恢复按钮
+            })
+            .catch(function (error) {
+              errorNode.textContent = String(error);
+              setBusy(false);
+            });
+        }
+
+        retryButton.addEventListener("click", function () {
+          setBusy(true);
+          // 成功时会导航离开本页；失败时重新回到本页（按钮状态自然重置）
+          if (bridge) bridge.retry();
+        });
+
+        autoButton.addEventListener("click", function () {
+          setBusy(true);
+          if (bridge) bridge.useAuto();
+        });
+
+        applyButton.addEventListener("click", function () {
+          apply(manualNode.value);
+        });
+
+        manualNode.addEventListener("keydown", function (event) {
+          if (event.key === "Enter") apply(manualNode.value);
+        });
+
+        refresh();
+      })();
+    </script>
+  </body>
+</html>

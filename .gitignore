@@ -1,0 +1,12 @@
+# 依赖与构建产物
+node_modules/
+dist/
+release/
+
+# 构建期生成的源码（由 scripts/gen-build-info.mjs 生成，postinstall 会自动补上）
+src/generated/
+
+# 本地杂项
+*.log
+.DS_Store
+Thumbs.db

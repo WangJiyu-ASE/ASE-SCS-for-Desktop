@@ -1,0 +1,44 @@
+# electron-builder 打包配置（唯一来源，改打包行为只改本文件）。
+#
+# 产物：release/SCS Setup.exe（NSIS 安装包）。
+
+appId: jp.ase.smartconstruction.desktop
+productName: SCS
+copyright: Copyright © ASE
+
+directories:
+  output: release
+
+# 只把编译产物与 package.json 放进 asar；源码不经打包
+files:
+  - dist/**/*
+  - package.json
+
+asar: true
+
+# 运行期需要绝对路径访问的资源，放到 <安装目录>/resources/ 下（与 app.asar 同级），
+# 主进程通过 process.resourcesPath 读取，见 src/main/RuntimePaths.ts
+extraResources:
+  - from: resources/ase-ca.crt
+    to: ase-ca.crt
+  - from: resources/fallback.html
+    to: fallback.html
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: resources/icon.ico
+  # 固定产物体名，交付/文档里统一按 "SCS Setup.exe" 引用
+  artifactName: SCS Setup.${ext}
+
+nsis:
+  # 让用户能选安装目录，并生成桌面 / 开始菜单快捷方式
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: SCS
+  uninstallDisplayName: SCS 智慧工地

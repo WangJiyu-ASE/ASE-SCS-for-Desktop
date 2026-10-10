@@ -1,0 +1,29 @@
+{
+  "name": "ase-scs-for-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ASE 智慧工地 · Windows 桌面壳（Electron 在线套壳）",
+  "author": "ASE",
+  "license": "UNLICENSED",
+  "main": "dist/main/MainApp.js",
+  "scripts": {
+    "postinstall": "node scripts/gen-build-info.mjs",
+    "gen:build-info": "node scripts/gen-build-info.mjs",
+    "gen:icon": "node scripts/gen-icon.mjs",
+    "fetch-ca": "node scripts/fetch-ca.mjs",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "prebuild": "node scripts/gen-build-info.mjs",
+    "build": "tsc -p tsconfig.json",
+    "predev": "node scripts/gen-build-info.mjs",
+    "dev": "npm run build && electron .",
+    "predist:win": "node scripts/gen-build-info.mjs",
+    "dist:win": "npm run build && electron-builder --win nsis --x64",
+    "dist:dir": "npm run build && electron-builder --win --dir --x64"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
+    "typescript": "^5"
+  }
+}
