@@ -19,8 +19,6 @@ asar: true
 # 运行期需要绝对路径访问的资源，放到 <安装目录>/resources/ 下（与 app.asar 同级），
 # 主进程通过 process.resourcesPath 读取，见 src/main/RuntimePaths.ts
 extraResources:
-  - from: resources/ase-ca.crt
-    to: ase-ca.crt
   - from: resources/fallback.html
     to: fallback.html
 

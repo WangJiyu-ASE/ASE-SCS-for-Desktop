@@ -1,13 +1,15 @@
-import { app, BrowserWindow, session } from "electron";
+import { app, BrowserWindow } from "electron";
 import { SHELL } from "../constants/ShellConstants";
-import { CertificateTrust } from "./CertificateTrust";
 import { ShellState } from "./ShellState";
 import { ShellWindow } from "./ShellWindow";
 
 /**
  * 主进程入口（单一实体）。
  *
- * 只负责编排：单实例锁 → 装证书信任 → 注册兜底页 IPC → 建窗。业务逻辑在 ShellWindow 里。
+ * 只负责编排：单实例锁 → 注册兜底页 IPC → 建窗。业务逻辑在 ShellWindow 里。
+ *
+ * 注意这里**没有**任何证书信任代码：站点用的是 Let's Encrypt，
+ * 由 Chromium 的系统信任库原生校验，壳不需要也不应该内置 CA。
  */
 
 // 视频监控（flv.js）必须能自动播放，不能要求用户先点一下
@@ -30,7 +32,6 @@ if (!app.requestSingleInstanceLock()) {
     // 让后端日志能区分「来自桌面壳」的请求
     app.userAgentFallback = `${app.userAgentFallback} ${SHELL.userAgentSuffix}`;
 
-    CertificateTrust.install(session.defaultSession);
     ShellWindow.registerIpc();
     ShellWindow.create(state);
 

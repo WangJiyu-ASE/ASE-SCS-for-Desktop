@@ -5,9 +5,9 @@ import { ShellIdentity } from "../shared/ShellIdentity";
 import type { ShellStatus } from "../shared/ShellStatus";
 import { AppMenu } from "./AppMenu";
 import { DownloadHandler } from "./DownloadHandler";
-import { EndpointResolver } from "./EndpointResolver";
-import type { EndpointProbeResult } from "./EndpointResolver";
 import { RuntimePaths } from "./RuntimePaths";
+import { SiteResolver } from "./SiteResolver";
+import type { SiteProbeResult } from "./SiteResolver";
 import { ShellState } from "./ShellState";
 
 /** Chromium 的 ERR_ABORTED：跳转 / SPA 导航的正常中断，不算加载失败 */
@@ -16,16 +16,16 @@ const ERR_ABORTED = -3;
 /**
  * 壳窗口（单一实体）。
  *
- * 只有一个 BrowserWindow，负责：选地址、加载远端页面、站外链接外抛、
- * 加载失败兜底、下载落盘、窗口位置记忆。业务逻辑一概没有 —— 页面、接口、
- * 媒体全部由站点自己提供，因此 web 仓库零改动。
+ * 只有一个 BrowserWindow，负责：加载站点、站外链接外抛、加载失败兜底、
+ * 下载落盘、窗口位置记忆。业务逻辑一概没有 —— 页面、接口、媒体全部由站点自己提供，
+ * 因此 web 仓库零改动。
  */
 export class ShellWindow {
   private static current: ShellWindow | null = null;
 
   /** 创建（或替换）壳窗口 */
   static create(state: ShellState): ShellWindow {
-    ShellWindow.current = new ShellWindow(state, new EndpointResolver(state));
+    ShellWindow.current = new ShellWindow(state, new SiteResolver(state));
     return ShellWindow.current;
   }
 
@@ -59,23 +59,23 @@ export class ShellWindow {
 
     ipcMain.handle(IPC.useAuto, async (event: IpcMainInvokeEvent): Promise<boolean> => {
       ShellWindow.assertLocalPage(event);
-      await ShellWindow.current?.useAuto();
+      await ShellWindow.current?.useDefault();
       return true;
     });
   }
 
   private readonly win: BrowserWindow;
   private readonly state: ShellState;
-  private readonly resolver: EndpointResolver;
+  private readonly resolver: SiteResolver;
 
-  private probes: EndpointProbeResult[] = [];
+  private probes: SiteProbeResult[] = [];
   private activeUrl: string | null = null;
   private lastError: string | null = null;
   private showingFallback = false;
   private handlingFailure = false;
-  private autoFallbackTried = false;
+  private navTimer: ReturnType<typeof setTimeout> | null = null;
 
-  private constructor(state: ShellState, resolver: EndpointResolver) {
+  private constructor(state: ShellState, resolver: SiteResolver) {
     this.state = state;
     this.resolver = resolver;
 
@@ -112,8 +112,7 @@ export class ShellWindow {
     this.attachBoundsPersistence();
     AppMenu.build({
       retry: () => void this.retry(),
-      useAuto: () => void this.useAuto(),
-      useEndpoint: (url) => void this.useEndpoint(url),
+      useDefault: () => void this.useDefault(),
       reload: () => this.win.webContents.reload(),
     });
 
@@ -122,28 +121,25 @@ export class ShellWindow {
 
   // ---------------------------------------------------------------- 对外动作
 
-  /** 重新探测并加载（菜单 / 兜底页「重试」） */
+  /** 重新加载（菜单 / 兜底页「重试」） */
   async retry(): Promise<void> {
-    this.autoFallbackTried = false;
     await this.loadActive();
   }
 
-  /** 回到自动模式（清掉手动指定） */
-  async useAuto(): Promise<void> {
+  /** 回到默认站点地址（清掉手动指定） */
+  async useDefault(): Promise<void> {
     this.state.setManualEndpoint(null);
-    this.autoFallbackTried = false;
     await this.loadActive();
   }
 
-  /** 指定站点地址（菜单 / 兜底页手填） */
+  /** 指定站点地址（兜底页手填） */
   async useEndpoint(raw: string): Promise<boolean> {
-    const url = EndpointResolver.normalizeEndpoint(raw);
+    const url = SiteResolver.normalizeEndpoint(raw);
     if (!url) {
       this.lastError = `地址无法识别：${raw}`;
       return false;
     }
     this.state.setManualEndpoint(url);
-    this.autoFallbackTried = false;
     await this.loadActive();
     return true;
   }
@@ -172,24 +168,34 @@ export class ShellWindow {
 
   // ---------------------------------------------------------------- 加载流程
 
-  /** 解析地址并加载；无可用地址则进兜底页 */
+  /**
+   * 加载当前地址。
+   *
+   * 内置站点地址**不做启动探活**，直接加载 —— 只有一个地址时，先探测再加载纯属白等
+   * （公网链路一次探活要 2 秒以上）。
+   *
+   * 但手输 / 命令行 / 环境变量这类**覆盖地址**可能写错（含指向不可路由的 IP），
+   * 那种地址导航会一直卡在空白页；因此先做一次有时限的探测，不通就直接进兜底页。
+   */
   private async loadActive(): Promise<void> {
-    const outcome = await this.resolver.resolve();
-    this.probes = outcome.probes;
-    this.lastError = outcome.error;
-    if (outcome.url) {
-      this.showingFallback = false;
-      this.activeUrl = outcome.url;
-      this.loadUrlQuietly(outcome.url);
-    } else {
-      await this.showFallback();
+    const target = this.resolver.target();
+    this.showingFallback = false;
+    this.activeUrl = target.url;
+
+    if (target.override && !(await this.resolver.reachable(target))) {
+      this.lastError = `地址不可达（${target.label}）：${target.url}`;
+      await this.failToFallback();
+      return;
     }
-    // 兜底：resolve 期间窗口一直是隐藏的，保证最迟在解析结束后一定可见
+
+    this.loadUrlQuietly(target.url);
+    // 兜底：保证最迟在这里窗口一定可见
     if (!this.win.isDestroyed() && !this.win.isVisible()) this.win.show();
   }
 
   /** 切到本地兜底页 */
   private async showFallback(): Promise<void> {
+    this.clearNavigationWatchdog();
     this.showingFallback = true;
     this.win.setTitle(WINDOW.fallbackTitle);
     await this.win.loadFile(RuntimePaths.fallbackPage());
@@ -201,28 +207,49 @@ export class ShellWindow {
    * 反而绕过统一的失败处理。
    */
   private loadUrlQuietly(url: string): void {
+    this.armNavigationWatchdog(url);
     void this.win.loadURL(url).catch(() => undefined);
   }
 
-  /** 加载失败：优先换一个候选地址重试一次，仍不行才进兜底页 */
+  /** 加载失败：诊断可达性后进兜底页 */
   private async handleLoadFailure(description: string, failedUrl: string): Promise<void> {
+    this.clearNavigationWatchdog();
     if (this.showingFallback || this.handlingFailure) return;
-    this.handlingFailure = true;
     this.lastError = `${description}（${failedUrl}）`;
+    await this.failToFallback();
+  }
+
+  /** 探测 + 切兜底页（诊断结果供页面展示） */
+  private async failToFallback(): Promise<void> {
+    this.handlingFailure = true;
     try {
-      const outcome = await this.resolver.resolve();
-      this.probes = outcome.probes;
-      if (outcome.url && outcome.url !== this.activeUrl && !this.autoFallbackTried) {
-        // 内网⇄公网之间自动跳一次，覆盖「换了网络环境」的常见场景
-        this.autoFallbackTried = true;
-        this.activeUrl = outcome.url;
-        this.handlingFailure = false; // 允许这次跳转若再失败时继续被处理
-        this.loadUrlQuietly(outcome.url);
-        return;
-      }
+      this.probes = await this.resolver.diagnose();
       await this.showFallback();
     } finally {
       this.handlingFailure = false;
+    }
+  }
+
+  // ---------------------------------------------------------------- 导航看门狗
+
+  /**
+   * 对每次程序化导航上闹钟。
+   *
+   * 页面若能连上会很快结束并撤销闹钟；对「DNS 能解析、TCP 却被黑洞丢掉」的地址，
+   * 没有闹钟就会白屏到系统 TCP 超时（macOS 约 75 秒）。
+   */
+  private armNavigationWatchdog(url: string): void {
+    this.clearNavigationWatchdog();
+    this.navTimer = setTimeout(() => {
+      this.navTimer = null;
+      void this.handleLoadFailure("加载超时", url);
+    }, WINDOW.navigationTimeoutMs);
+  }
+
+  private clearNavigationWatchdog(): void {
+    if (this.navTimer) {
+      clearTimeout(this.navTimer);
+      this.navTimer = null;
     }
   }
 
@@ -258,10 +285,8 @@ export class ShellWindow {
       },
     );
 
-    this.win.webContents.on("did-finish-load", () => {
-      // 远端页面成功加载 → 允许下一次「换地址」自动跳转
-      if (this.win.webContents.getURL().startsWith("http")) this.autoFallbackTried = false;
-    });
+    // 导航正常结束 → 撤销看门狗
+    this.win.webContents.on("did-finish-load", () => this.clearNavigationWatchdog());
   }
 
   /** 标题统一为「<页面标题> · 智慧工地」 */

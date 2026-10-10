@@ -10,7 +10,6 @@
     "postinstall": "node scripts/gen-build-info.mjs",
     "gen:build-info": "node scripts/gen-build-info.mjs",
     "gen:icon": "node scripts/gen-icon.mjs",
-    "fetch-ca": "node scripts/fetch-ca.mjs",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "prebuild": "node scripts/gen-build-info.mjs",
     "build": "tsc -p tsconfig.json",

@@ -13,9 +13,10 @@ export interface WindowBounds {
 
 /** 落盘结构 */
 interface StateShape {
-  /** 上次自动探测成功的地址（下次启动优先直连，省一次探测） */
-  autoEndpoint?: string;
-  /** 用户手动指定 / 菜单指定的地址（优先级最高，清空即回到自动） */
+  /**
+   * 用户手动指定 / 菜单指定的地址（优先级最高，清空即回到默认站点地址）。
+   * 站点只有单一域名，因此不再需要「记住上次探测成功的地址」。
+   */
   manualEndpoint?: string;
   /** 窗口位置与尺寸 */
   window?: WindowBounds;
@@ -24,7 +25,7 @@ interface StateShape {
 /**
  * 壳的本地状态（单一实体）。
  *
- * 只做一件事：把「上次用哪个地址、窗口摆在哪」持久化到 userData，
+ * 只做一件事：把「用户指定的地址、窗口摆在哪」持久化到 userData，
  * 读写失败一律降级为「当作没有记忆」，绝不让状态文件影响启动。
  */
 export class ShellState {
@@ -51,15 +52,6 @@ export class ShellState {
     } catch (error) {
       console.error("[state] 状态写入失败：", error);
     }
-  }
-
-  get autoEndpoint(): string | null {
-    return this.data.autoEndpoint ?? null;
-  }
-
-  setAutoEndpoint(url: string): void {
-    this.data.autoEndpoint = url;
-    this.save();
   }
 
   get manualEndpoint(): string | null {

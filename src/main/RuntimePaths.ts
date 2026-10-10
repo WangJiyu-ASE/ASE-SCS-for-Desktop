@@ -1,20 +1,14 @@
 import path from "node:path";
 import { app } from "electron";
-import { FILES, SHELL } from "../constants/ShellConstants";
+import { FILES } from "../constants/ShellConstants";
 
 /**
  * 运行期路径（单一来源）。
  *
- * 打包后，内置 CA 与兜底页由 electron-builder 的 extraResources 放到
- * `<安装目录>/resources/` 下（与 app.asar 同级），因此走 process.resourcesPath；
- * 开发态直接读仓库里的 `resources/`。
+ * 打包后，兜底页由 electron-builder 的 extraResources 放到 `<安装目录>/resources/` 下
+ * （与 app.asar 同级），因此走 process.resourcesPath；开发态直接读仓库里的 `resources/`。
  */
 export class RuntimePaths {
-  /** 内置自签 CA 证书的绝对路径 */
-  static caCertFile(): string {
-    return path.join(RuntimePaths.resourcesDir(), SHELL.caCertFile);
-  }
-
   /** 加载失败兜底页的绝对路径 */
   static fallbackPage(): string {
     return path.join(RuntimePaths.resourcesDir(), FILES.fallbackPage);
