@@ -8,21 +8,18 @@
   "main": "dist/main/MainApp.js",
   "scripts": {
     "postinstall": "node scripts/gen-build-info.mjs",
-    "gen:build-info": "node scripts/gen-build-info.mjs",
-    "gen:icon": "node scripts/gen-icon.mjs",
-    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "prebuild": "node scripts/gen-build-info.mjs",
-    "build": "tsc -p tsconfig.json",
     "predev": "node scripts/gen-build-info.mjs",
+    "build": "tsc -p tsconfig.json",
     "dev": "npm run build && electron .",
-    "predist:win": "node scripts/gen-build-info.mjs",
-    "dist:win": "npm run build && electron-builder --win nsis --x64",
-    "dist:dir": "npm run build && electron-builder --win --dir --x64"
+    "dist:win": "node scripts/package-win.mjs"
   },
   "devDependencies": {
     "@types/node": "^22",
     "electron": "^44.7.0",
     "electron-builder": "^26.15.3",
+    "png-to-ico": "^2.1.8",
+    "sharp": "^0.34.4",
     "typescript": "^5"
   }
 }

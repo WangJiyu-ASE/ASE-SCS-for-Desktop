@@ -37,6 +37,7 @@ jobs:
 
       - name: Build installer
         run: npm run dist:win
+        # package-win.mjs：清理 release/、gen:icon、build、electron-builder
         env:
           # 未配置代码签名证书，避免 electron-builder 去找签名工具而报错
           CSC_IDENTITY_AUTO_DISCOVERY: "false"

@@ -1,9 +1,29 @@
-# 依赖与构建产物
+# 依赖与编译
 node_modules/
 dist/
+
+# 本机便携 Node（勿提交）
+.tools/
+
+# 打包交付目录（安装包由 npm run dist:win 产出）
 release/
 
-# 构建期生成的源码（由 scripts/gen-build-info.mjs 生成，postinstall 会自动补上）
+# electron-builder 兜底输出（实际构建在系统临时目录，见 scripts/packaging.constants.mjs）
+.electron-out/
+out/
+
+# 清理失败时改名的遗留目录
+release._locked_*/
+out_release._locked_*/
+
+# 由 scripts/gen-icon.mjs 生成（dist:win 会自动执行 gen:icon）
+resources/icon.ico
+resources/installer/
+
+# 临时拉取线上 bundle 做图标对照（勿提交）
+resources/_site-icons/
+
+# 构建期生成的源码（postinstall / prebuild 会补上）
 src/generated/
 
 # 本地杂项

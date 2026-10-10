@@ -54,7 +54,8 @@ electron-builder.yml             打包配置（产物名 SCS Setup.exe）
 .gitmodules                      web submodule 定义
 resources/
   fallback.html                  加载失败兜底页（本地 file:// 页面）
-  icon.ico                       应用 / 安装包图标（由 scripts/gen-icon.mjs 生成）
+  icon.ico                       应用图标（登录页 safety-certificate，scripts/gen-icon.mjs）
+  installer/                     NSIS 向导图（侧栏 / 顶栏 BMP，同脚本生成）
 scripts/
   gen-build-info.mjs             生成 src/generated/BuildInfo.ts（版本 / web 提交号 / 构建时间）
   gen-icon.mjs                   生成 icon.ico（无第三方依赖）
@@ -112,14 +113,10 @@ npm run dev          # 编译 + 起壳
 
 `npm run dev` 会真的去连站点，需要能访问到 `ase-scs.top:8081`。
 
-其他脚本：
-
 | 命令 | 说明 |
 |---|---|
-| `npm run build` | 只做 TS 编译（`tsc`） |
-| `npm run gen:build-info` | 刷新 `src/generated/BuildInfo.ts` |
-| `npm run gen:icon` | 重新生成 `resources/icon.ico` |
-| `npm run clean` | 删除 `dist/` |
+| `npm run build` | TS 编译 |
+| `npm run dist:win` | 出安装包 `release/SCS Setup.exe`（`scripts/package-win.mjs`） |
 
 ---
 
@@ -147,10 +144,8 @@ npm run dev          # 编译 + 起壳
 macOS / Linux 上也能交叉出 Windows 包（依赖 wine，可能需要额外安装）：
 
 ```bash
-npm run dist:win     # 产物：release/SCS Setup.exe
+npm run dist:win     # → release/SCS Setup.exe
 ```
-
-若只是想在本地看打包结果，可以用 `npm run dist:dir` 出解包目录（不生成安装包）。
 
 ---
 

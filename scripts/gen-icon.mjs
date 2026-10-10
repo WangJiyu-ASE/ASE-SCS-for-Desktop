@@ -1,234 +1,177 @@
 #!/usr/bin/env node
 /**
- * 生成 resources/icon.ico（256×256，单条 PNG 压缩图像）。
- *
- * 为什么要自己画：本仓库不引入图像处理依赖，而图标必须随包发布。
- * ICO 允许直接内嵌 PNG（Windows Vista+ 支持），所以只要手写 PNG 编码 + ICO 目录即可。
- *
- * 需要换图标时，改下面的 COLORS / 形状参数后重跑：npm run gen:icon
+ * 生成应用图标与 NSIS 安装向导图。
+ * 规范见 .cursor/skills/scs-brand-assets/SKILL.md
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { deflateSync } from "node:zlib";
+import pngToIco from "png-to-ico";
+import sharp from "sharp";
+import { LOGIN_BRAND, LOGIN_ICON, LOGIN_MARK_LAYOUT } from "./brand-icon.constants.mjs";
+import { INSTALLER_ASSETS, INSTALLER_COPY } from "./installer.constants.mjs";
 
-// ---------------------------------------------------------------- 可调参数
-const SIZE = 256; // 最终边长
-const SS = 4; // 超采样倍率（先画大图再缩，得到抗锯齿边缘）
-const CORNER_RATIO = 0.22; // 圆角半径 / 边长
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const ICON_SIZES = [16, 24, 32, 48, 64, 128, 256];
+/** 超采样倍率（2 足够清晰，4 会明显拖慢 gen:icon） */
+const RENDER_SCALE = 2;
 
-const COLORS = {
-  background: [14, 42, 71, 255], // #0E2A47
-  building: [232, 241, 250, 255], // #E8F1FA
-  roof: [58, 160, 232, 255], // #3AA0E8
-};
+const rgb = (c) => `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+const rgba = (c) => `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${(c[3] ?? 255) / 255})`;
 
-// 建筑柱体（比例，相对边长）：宽 / 高 / 底距
-const BARS = [
-  { width: 0.13, height: 0.28 },
-  { width: 0.13, height: 0.42 },
-  { width: 0.13, height: 0.21 },
-];
-const BAR_GAP = 0.07;
-const BAR_BOTTOM = 0.24; // 距底部
-const ROOF_HEIGHT = 0.17; // 屋顶三角高度
-const ROOF_OVERHANG = 1.9; // 屋顶半宽 / 柱宽
-// ---------------------------------------------------------------------------
-
-const N = SIZE * SS;
-const pixels = new Uint8ClampedArray(N * N * 4); // RGBA
-
-function insideRoundedSquare(x, y, x0, y0, x1, y1, radius) {
-  if (x < x0 || x > x1 || y < y0 || y > y1) return false;
-  const atLeft = x < x0 + radius;
-  const atRight = x > x1 - radius;
-  const atTop = y < y0 + radius;
-  const atBottom = y > y1 - radius;
-  if ((atLeft || atRight) && (atTop || atBottom)) {
-    const cx = atLeft ? x0 + radius : x1 - radius;
-    const cy = atTop ? y0 + radius : y1 - radius;
-    return (x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2;
-  }
-  return true;
+function loginMarkPaths(fill) {
+  return LOGIN_ICON.paths.map((d) => `<path d="${d}" fill="${fill}"/>`).join("");
 }
 
-function insideTriangle(px, py, apexX, apexY, halfWidth, baseY) {
-  if (py < apexY || py > baseY) return false;
-  const t = (py - apexY) / (baseY - apexY);
-  return Math.abs(px - apexX) <= halfWidth * t;
+function loginMarkTransform(box, offsetX, offsetY) {
+  const [vx, vy, vw] = LOGIN_ICON.viewBox;
+  const scale = box / vw;
+  const tx = offsetX - vx * scale;
+  const ty = offsetY - vy * scale;
+  return `translate(${tx} ${ty}) scale(${scale})`;
 }
 
-function paint(color) {
-  for (let y = 0; y < N; y++) {
-    for (let x = 0; x < N; x++) {
-      const i = (y * N + x) * 4;
-      pixels[i] = color[0];
-      pixels[i + 1] = color[1];
-      pixels[i + 2] = color[2];
-      pixels[i + 3] = color[3];
+function loginBrandMarkElements(size, originX = 0, originY = 0) {
+  const { outerPaddingRatio, boxCornerRatio, glyphInsetRatio, glyphScale } = LOGIN_MARK_LAYOUT;
+  const pad = size * outerPaddingRatio;
+  const box = size - pad * 2;
+  const rx = size * boxCornerRatio;
+  const glyphBox = box * glyphScale;
+  const glyphOffset = pad + box * glyphInsetRatio;
+
+  return `
+    <rect x="${originX}" y="${originY}" width="${size}" height="${size}" rx="${rx}" fill="${rgb(LOGIN_BRAND.appCanvas)}"/>
+    <rect x="${originX + pad}" y="${originY + pad}" width="${box}" height="${box}" rx="${rx * 0.85}" fill="${rgb(LOGIN_BRAND.markBackground)}"/>
+    <g transform="${loginMarkTransform(glyphBox, originX + glyphOffset, originY + glyphOffset)}">${loginMarkPaths(rgb(LOGIN_BRAND.mark))}</g>
+  `;
+}
+
+/** 与 web `.login-brand__mark` 一致：浅蓝底 + 主色 safety-certificate */
+function loginBrandMarkSvg(size) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${loginBrandMarkElements(size)}</svg>`;
+}
+
+function installerSidebarSvg() {
+  const { width: w, height: h } = INSTALLER_ASSETS.sidebar;
+  const markSize = 88;
+  const x0 = (w - markSize) / 2;
+  const y0 = 40;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+    <defs>
+      <linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="${rgb(LOGIN_BRAND.gradientFrom)}"/>
+        <stop offset="100%" stop-color="${rgb(LOGIN_BRAND.gradientTo)}"/>
+      </linearGradient>
+      <radialGradient id="glow" cx="50%" cy="0%" r="80%">
+        <stop offset="0%" stop-color="${rgba(LOGIN_BRAND.glow)}"/>
+        <stop offset="70%" stop-color="transparent"/>
+      </radialGradient>
+    </defs>
+    <rect width="${w}" height="${h}" fill="url(#bg)"/>
+    <rect width="${w}" height="${h}" fill="url(#glow)"/>
+    <rect x="0" y="0" width="${w}" height="4" fill="${rgb(LOGIN_BRAND.mark)}"/>
+    ${loginBrandMarkElements(markSize, x0, y0)}
+    <text x="${w / 2}" y="168" text-anchor="middle" fill="#ffffff" font-family="Microsoft YaHei, PingFang SC, sans-serif" font-size="15" font-weight="600">${INSTALLER_COPY.productLine}</text>
+    <text x="${w / 2}" y="192" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-family="Microsoft YaHei, PingFang SC, sans-serif" font-size="11">${INSTALLER_COPY.tagline}</text>
+  </svg>`;
+}
+
+function installerHeaderSvg() {
+  const { width: w, height: h } = INSTALLER_ASSETS.header;
+  const markSize = 34;
+  const markY = Math.round((h - markSize) / 2);
+  const textX = 6 + markSize + 6;
+  const textMaxWidth = w - textX - 4;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+    <defs>
+      <linearGradient id="hdr" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="${rgb(LOGIN_BRAND.gradientFrom)}"/>
+        <stop offset="100%" stop-color="${rgb(LOGIN_BRAND.gradientTo)}"/>
+      </linearGradient>
+    </defs>
+    <rect width="${w}" height="${h}" fill="url(#hdr)"/>
+    ${loginBrandMarkElements(markSize, 6, markY)}
+    <text x="${textX}" y="${h / 2}" dominant-baseline="middle" fill="#ffffff" font-family="Microsoft YaHei, PingFang SC, sans-serif" font-size="10" font-weight="600" textLength="${textMaxWidth}" lengthAdjust="spacingAndGlyphs">${INSTALLER_COPY.headerLine}</text>
+  </svg>`;
+}
+
+function encodeBmp24(rgba, width, height) {
+  const rowStride = Math.ceil((width * 3) / 4) * 4;
+  const pixelBytes = rowStride * height;
+  const fileSize = 14 + 40 + pixelBytes;
+  const out = Buffer.alloc(fileSize);
+
+  out.write("BM", 0);
+  out.writeUInt32LE(fileSize, 2);
+  out.writeUInt32LE(54, 10);
+  out.writeUInt32LE(40, 14);
+  out.writeInt32LE(width, 18);
+  out.writeInt32LE(height, 22);
+  out.writeUInt16LE(1, 26);
+  out.writeUInt16LE(24, 28);
+  out.writeUInt32LE(0, 30);
+
+  let offset = 54;
+  for (let y = height - 1; y >= 0; y--) {
+    let col = 0;
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      out[offset++] = rgba[i + 2];
+      out[offset++] = rgba[i + 1];
+      out[offset++] = rgba[i];
+      col += 3;
     }
-  }
-}
-
-function paintWhere(color, test) {
-  for (let y = 0; y < N; y++) {
-    for (let x = 0; x < N; x++) {
-      if (!test(x, y)) continue;
-      const i = (y * N + x) * 4;
-      pixels[i] = color[0];
-      pixels[i + 1] = color[1];
-      pixels[i + 2] = color[2];
-      pixels[i + 3] = color[3];
-    }
-  }
-}
-
-/** 柱体在超采样坐标下的几何 */
-function barRects() {
-  const totalWidth = BARS.reduce((sum, bar) => sum + bar.width, 0) + BAR_GAP * (BARS.length - 1);
-  let cursor = (1 - totalWidth) / 2;
-  return BARS.map((bar) => {
-    const rect = {
-      x0: cursor * N,
-      x1: (cursor + bar.width) * N,
-      y1: (1 - BAR_BOTTOM) * N,
-      y0: (1 - BAR_BOTTOM - bar.height) * N,
-      width: bar.width,
-    };
-    cursor += bar.width + BAR_GAP;
-    return rect;
-  });
-}
-
-function draw() {
-  const radius = CORNER_RATIO * N;
-  paintWhere(COLORS.background, (x, y) => insideRoundedSquare(x, y, 0, 0, N - 1, N - 1, radius));
-
-  const rects = barRects();
-  paintWhere(COLORS.building, (x, y) =>
-    rects.some((rect) => x >= rect.x0 && x <= rect.x1 && y >= rect.y0 && y <= rect.y1),
-  );
-
-  // 屋顶：盖在中间（最高）那根柱子上
-  const top = rects.reduce((best, rect) => (rect.y0 < best.y0 ? rect : best), rects[0]);
-  const apexX = (top.x0 + top.x1) / 2;
-  const halfWidth = ((top.x1 - top.x0) / 2) * ROOF_OVERHANG;
-  paintWhere(COLORS.roof, (x, y) =>
-    insideTriangle(x, y, apexX, top.y0 - ROOF_HEIGHT * N, halfWidth, top.y0 + ROOF_HEIGHT * N * 0.55),
-  );
-}
-
-/** 超采样降采样到 SIZE×SIZE */
-function downsample() {
-  const out = Buffer.alloc(SIZE * SIZE * 4);
-  const block = SS * SS;
-  for (let y = 0; y < SIZE; y++) {
-    for (let x = 0; x < SIZE; x++) {
-      let r = 0;
-      let g = 0;
-      let b = 0;
-      let a = 0;
-      for (let sy = 0; sy < SS; sy++) {
-        for (let sx = 0; sx < SS; sx++) {
-          const i = ((y * SS + sy) * N + (x * SS + sx)) * 4;
-          r += pixels[i];
-          g += pixels[i + 1];
-          b += pixels[i + 2];
-          a += pixels[i + 3];
-        }
-      }
-      const o = (y * SIZE + x) * 4;
-      out[o] = Math.round(r / block);
-      out[o + 1] = Math.round(g / block);
-      out[o + 2] = Math.round(b / block);
-      out[o + 3] = Math.round(a / block);
+    while (col % 4 !== 0) {
+      out[offset++] = 0;
+      col++;
     }
   }
   return out;
 }
 
-// ---------------------------------------------------------------- PNG 编码
+async function rasterSvgToBmp(svg, width, height) {
+  const rgba = await sharp(Buffer.from(svg)).resize(width, height).ensureAlpha().raw().toBuffer();
+  return encodeBmp24(rgba, width, height);
+}
 
-const CRC_TABLE = (() => {
-  const table = new Int32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    table[n] = c;
+async function buildAppIconIco() {
+  const masterSvg = loginBrandMarkSvg(256 * RENDER_SCALE);
+  const pngBuffers = [];
+  for (const size of ICON_SIZES) {
+    const png = await sharp(Buffer.from(masterSvg))
+      .resize(size, size, { kernel: sharp.kernel.lanczos3 })
+      .png()
+      .toBuffer();
+    pngBuffers.push(png);
   }
-  return table;
-})();
-
-function crc32(buffer) {
-  let c = 0xffffffff;
-  for (let i = 0; i < buffer.length; i++) c = CRC_TABLE[(c ^ buffer[i]) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
+  const ico = await pngToIco(pngBuffers);
+  return { ico, previewPng: pngBuffers.at(-1) };
 }
 
-function chunk(type, data) {
-  const length = Buffer.alloc(4);
-  length.writeUInt32BE(data.length, 0);
-  const typeAndData = Buffer.concat([Buffer.from(type, "ascii"), data]);
-  const crc = Buffer.alloc(4);
-  crc.writeUInt32BE(crc32(typeAndData), 0);
-  return Buffer.concat([length, typeAndData, crc]);
+async function main() {
+  const resourcesDir = join(root, "resources");
+  const installerDir = join(resourcesDir, "installer");
+  mkdirSync(installerDir, { recursive: true });
+
+  const { ico } = await buildAppIconIco();
+  writeFileSync(join(resourcesDir, "icon.ico"), ico);
+
+  const { sidebar, header } = INSTALLER_ASSETS;
+  writeFileSync(
+    join(installerDir, "installerSidebar.bmp"),
+    await rasterSvgToBmp(installerSidebarSvg(), sidebar.width, sidebar.height),
+  );
+  writeFileSync(
+    join(installerDir, "installerHeader.bmp"),
+    await rasterSvgToBmp(installerHeaderSvg(), header.width, header.height),
+  );
+
+  console.log(`[icon] ${join(resourcesDir, "icon.ico")}（${ICON_SIZES.join(", ")} px，png-to-ico）`);
+  console.log(`[icon] ${join(installerDir, "installerSidebar.bmp")}`);
+  console.log(`[icon] ${join(installerDir, "installerHeader.bmp")}`);
 }
 
-function encodePng(rgba) {
-  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(SIZE, 0);
-  ihdr.writeUInt32BE(SIZE, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 6; // color type: RGBA
-  ihdr[10] = 0; // compression
-  ihdr[11] = 0; // filter
-  ihdr[12] = 0; // interlace
-
-  // 每行前面加一个 filter 字节（0 = None）
-  const stride = SIZE * 4;
-  const raw = Buffer.alloc((stride + 1) * SIZE);
-  for (let y = 0; y < SIZE; y++) {
-    raw[y * (stride + 1)] = 0;
-    rgba.copy(raw, y * (stride + 1) + 1, y * stride, (y + 1) * stride);
-  }
-
-  return Buffer.concat([
-    signature,
-    chunk("IHDR", ihdr),
-    chunk("IDAT", deflateSync(raw, { level: 9 })),
-    chunk("IEND", Buffer.alloc(0)),
-  ]);
-}
-
-/** 单个 256×256 PNG 条目的 ICO */
-function encodeIco(png) {
-  const header = Buffer.alloc(6);
-  header.writeUInt16LE(0, 0); // reserved
-  header.writeUInt16LE(1, 2); // type: icon
-  header.writeUInt16LE(1, 4); // image count
-
-  const entry = Buffer.alloc(16);
-  entry[0] = 0; // width  0 = 256
-  entry[1] = 0; // height 0 = 256
-  entry[2] = 0; // palette
-  entry[3] = 0; // reserved
-  entry.writeUInt16LE(1, 4); // color planes
-  entry.writeUInt16LE(32, 6); // bits per pixel
-  entry.writeUInt32LE(png.length, 8);
-  entry.writeUInt32LE(header.length + entry.length, 12);
-
-  return Buffer.concat([header, entry, png]);
-}
-
-// ---------------------------------------------------------------- 输出
-
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const target = join(root, "resources", "icon.ico");
-
-draw();
-const ico = encodeIco(encodePng(downsample()));
-mkdirSync(dirname(target), { recursive: true });
-writeFileSync(target, ico);
-console.log(`[icon] ${target}（${SIZE}×${SIZE}, ${ico.length} 字节）`);
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

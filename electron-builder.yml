@@ -1,13 +1,16 @@
 # electron-builder 打包配置（唯一来源，改打包行为只改本文件）。
 #
-# 产物：release/SCS Setup.exe（NSIS 安装包）。
+# 产物：release/SCS Setup.exe（由 scripts/package-win.mjs 在系统临时目录构建后复制到 release/）。
+# directories.output 仅作兜底；实际出包由 package-win 覆盖为 %TEMP%/ase-scs-for-desktop-electron-out。
 
 appId: jp.ase.smartconstruction.desktop
 productName: SCS
 copyright: Copyright © ASE
 
 directories:
-  output: release
+  output: .electron-out
+  # 应用图标 icon.ico 与 NSIS 资源同根目录（见 .cursor/skills/scs-brand-assets/SKILL.md）
+  buildResources: resources
 
 # 只把编译产物与 package.json 放进 asar；源码不经打包
 files:
@@ -36,7 +39,17 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
-  createDesktopShortcut: true
+  createDesktopShortcut: always
   createStartMenuShortcut: true
-  shortcutName: SCS
+  shortcutName: SCS 智慧工地
   uninstallDisplayName: SCS 智慧工地
+  # 与登录页一致的图标与向导皮肤（由 npm run gen:icon 生成）
+  installerIcon: icon.ico
+  uninstallerIcon: icon.ico
+  installerSidebar: installer/installerSidebar.bmp
+  installerHeader: installer/installerHeader.bmp
+  installerLanguages:
+    - zh_CN
+  language: "2052"
+  runAfterFinish: true
+  multiLanguageInstaller: false
