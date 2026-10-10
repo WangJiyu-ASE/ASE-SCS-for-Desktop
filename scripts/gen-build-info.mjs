@@ -28,8 +28,20 @@ function readVersion() {
 }
 
 function readWebCommit() {
-  // 优先读提交树；仓库还没有首个提交时（`HEAD` 不存在）退回读暂存区，
-  // 两者都记录着 web 的 gitlink，效果一致。
+  // 1) 本地已检出 submodule 时，取它的实际 HEAD —— 这是「本次构建对应的 web 版本」最准确的答案。
+  try {
+    const out = execFileSync("git", ["-C", "web", "rev-parse", "HEAD"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    if (/^[0-9a-f]{7,40}$/.test(out)) return out;
+  } catch {
+    // web/ 不存在或未检出（CI 不拉取 submodule），换下一种取法
+  }
+
+  // 2) 回退到父仓库记录的 gitlink。`ls-tree` 读提交树，`ls-files -s` 读暂存区
+  //    （仓库还没有首个提交时 HEAD 不存在，只能读暂存区）。两者都无需子仓库工作区。
   for (const args of [
     ["ls-tree", "HEAD", "web"],
     ["ls-files", "-s", "web"],
